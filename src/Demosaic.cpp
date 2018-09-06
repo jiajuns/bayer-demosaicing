@@ -10,47 +10,45 @@ using namespace cv;
  * @param filePath file path to bayer mosaic image
  * @param color file path to the original color image
  */
-Demosaic::Demosaic(string filePath, string color) {
-    Mat raw = imread(filePath, CV_LOAD_IMAGE_GRAYSCALE);
+Demosaic::Demosaic(string filePath) {
+    Mat raw = imread(filePath, IMREAD_UNCHANGED);
     raw.convertTo(image, CV_32F);
-
-    colorImage = imread(color, CV_LOAD_IMAGE_COLOR);
-    colorImage.convertTo(colorImage, CV_32F);
-
+    
     rows = image.rows;
     cols = image.cols;
 
-    r = Mat::zeros(rows, cols, CV_32F);
-    g = Mat::zeros(rows, cols, CV_32F);
-    b = Mat::zeros(rows, cols, CV_32F);
+    r = Mat::zeros(rows/2, cols/2, CV_32F);
+    g = Mat::zeros(rows/2, cols/2, CV_32F);
+    b = Mat::zeros(rows/2, cols/2, CV_32F);
+    n = Mat::zeros(rows/2, cols/2, CV_32F);
 
-    demosaicImage = Mat::zeros(rows, cols, CV_32FC3);
-    result = Mat::zeros(rows, cols, CV_32FC3);
+    demosaicImageRGB = Mat::zeros(rows/2, cols/2, CV_32FC3);
+    demosaicImageNir = Mat::zeros(rows/2, cols/2, CV_32F);
 }
 
 /**
- * Split bayer (RGGB) mosaic image into separate R, G, and B matrices
+ * Split bayer NBRG mosaic image into separate R, G, and B matrices
  */
 void Demosaic::generateRGBComponents() {
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             if (i % 2 == 0) {
                 if (j % 2 == 0) {
-                    // R Component
-                    r.at<float>(i,j) = image.at<float>(i,j);
+                    // n Component
+                    n.at<float>(i/2,j/2) = image.at<float>(i,j);
                 }
                 else {
-                    // G Component
-                    g.at<float>(i,j) = image.at<float>(i,j);
+                    // b Component
+                    b.at<float>(i/2,j/2) = image.at<float>(i,j);
                 }
             }
             else {
                 if (j % 2 == 0) {
-                    // G Component
-                    g.at<float>(i,j) = image.at<float>(i,j);
+                    // R Component
+                    r.at<float>(i/2,j/2) = image.at<float>(i,j);
                 } else {
-                    // B Component
-                    b.at<float>(i,j) = image.at<float>(i,j);
+                    // G Component
+                    g.at<float>(i/2,j/2) = image.at<float>(i,j);
                 }
             }
         }
@@ -61,119 +59,78 @@ void Demosaic::generateRGBComponents() {
  * Interpolate the missing information for each of the R, G, and B component matrices
  */
 void Demosaic::interpolate() {
-    // Kernals for R and B components
+    // kernel for N
     float kdata1[] = {
-            0., 0., 0.,
-            1./2., 0., 1./2.,
-            0., 0., 0.
+        1./16., 3./16.,
+        3./16., 9./16.
     };
 
-    float kdata2[] {
-            0., 1./2., 0.,
-            0., 0., 0.,
-            0., 1./2., 0.
+    // kernel for B
+    float kdata2[] = {
+        3./16., 1./16.,
+        9./16., 3./16.
     };
 
-    float kdata3[] {
-            1./4., 0., 1./4.,
-            0., 0., 0.,
-            1./4., 0., 1./4.
+    // kernel for R
+    float kdata3[] = {
+        3./16., 9./16.,
+        1./16., 3./16.
     };
 
-    // Kernal for G component
-    float kdata4[] {
-            0., 1./4., 0.,
-            1./4., 0., 1./4.,
-            0., 1./4., 0.
+    // kernel for G
+    float kdata4[] = {
+        9./16., 3./16.,
+        3./16., 1./16.
     };
 
-    Mat k1 = Mat(3, 3, CV_32F, kdata1);
-    Mat k2 = Mat(3, 3, CV_32F, kdata2);
-    Mat k3 = Mat(3, 3, CV_32F, kdata3);
-    Mat k4 = Mat(3, 3, CV_32F, kdata4);
+    Mat k1 = Mat(2, 2, CV_32F, kdata1);
+    Mat k2 = Mat(2, 2, CV_32F, kdata2);
+    Mat k3 = Mat(2, 2, CV_32F, kdata3);
+    Mat k4 = Mat(2, 2, CV_32F, kdata4);
 
-    Mat r2 = Mat(rows, cols, CV_32F);
-    Mat r3 = Mat(rows, cols, CV_32F);
-    Mat r4 = Mat(rows, cols, CV_32F);
+    Mat n2 = Mat(rows/2, cols/2, CV_32F);
+    Mat b2 = Mat(rows/2, cols/2, CV_32F);
+    Mat r2 = Mat(rows/2, cols/2, CV_32F);
+    Mat g2 = Mat(rows/2, cols/2, CV_32F);
 
-    Mat b2 = Mat(rows, cols, CV_32F);
-    Mat b3 = Mat(rows, cols, CV_32F);
-    Mat b4 = Mat(rows, cols, CV_32F);
-
-    Mat g2 = Mat(rows, cols, CV_32F);
-
-    filter2D(r, r2, -1, k1);
-    filter2D(r, r3, -1, k2);
-    filter2D(r, r4, -1, k3);
-    r = r + r2 + r3 + r4;
-
-    filter2D(b, b2, -1, k1);
-    filter2D(b, b3, -1, k2);
-    filter2D(b, b4, -1, k3);
-    b = b + b2 + b3 + b4;
-
+    filter2D(n, n2, -1, k1);
+    filter2D(b, b2, -1, k2);
+    filter2D(r, r2, -1, k3);
     filter2D(g, g2, -1, k4);
-    g = g + g2;
+    n = n2;
+    b = b2;
+    r = r2;
+    g = g2;
 }
 
 /**
  * Combine R, G, and B component matrices into a single three channel color image
  */
 void Demosaic::colorize() {
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            demosaicImage.at<Vec3f>(i, j) = Vec3f(
+    for (int i = 0; i < rows/2; i++) {
+        for (int j = 0; j < cols/2; j++) {
+            demosaicImageRGB.at<Vec3f>(i, j) = Vec3f(
                     b.at<float>(i,j),
                     g.at<float>(i,j),
                     r.at<float>(i,j)
             );
         }
     }
-}
-
-/**
- * Highlight the artifacts produced by the demosaicing process
- */
-void Demosaic::squaredDifference() {
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            for (int k = 0; k < 3; k++) {
-                result.at<Vec3f>(i, j)[k] =
-                        sqrt(pow((colorImage.at<Vec3f>(i, j)[k] - demosaicImage.at<Vec3f>(i, j)[k]), 2));
-            }
-        }
-    }
-}
-
-/**
- * Implement proposed bilinear interpolation improvement
- */
-void Demosaic::modifiedInterpolation() {
-    Mat r_g = Mat(rows, cols, CV_32F);
-    Mat b_g = Mat(rows, cols, CV_32F);
-
-    r_g = r - g;
-    b_g = b - g;
-
-    medianBlur(r_g, r_g, 3);
-    medianBlur(b_g, b_g, 3);
-
-    r = r_g + g;
-    b = b_g + g;
+    demosaicImageNir = n;
 }
 
 /**
  * Display results of the demosaicing process
  */
 void Demosaic::display() {
-    Mat d8u, r8u, c8u;
-    demosaicImage.convertTo(d8u, CV_8UC3);
-    result.convertTo(r8u, CV_8UC3);
-    colorImage.convertTo(c8u, CV_8UC3);
-
-    imshow("Original", c8u);
+    Mat d8u, n8u;
+    demosaicImageRGB = demosaicImageRGB / 4;
+    demosaicImageRGB.convertTo(d8u, CV_8UC3);
     imshow("Demosaic", d8u);
-    imshow("Squared Difference", r8u);
+    waitKey(0);
 
+    demosaicImageNir = demosaicImageNir / 4;
+    demosaicImageNir.convertTo(n8u, CV_8UC3);
+    imshow("Demosaic", n8u);
     waitKey(0);
 }

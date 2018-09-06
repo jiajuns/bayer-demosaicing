@@ -11,19 +11,21 @@ private:
     cv::Mat r;
     cv::Mat g;
     cv::Mat b;
+    cv::Mat n;
     int rows;
     int cols;
-    cv::Mat demosaicImage;
-    cv::Mat colorImage;
-    cv::Mat result;
+    cv::Mat demosaicImageRGB;
+    cv::Mat demosaicImageNir;
+    // cv::Mat colorImage;
+    // cv::Mat result;
 
 public:
-    explicit Demosaic(std::string filePath, std::string color);
+    explicit Demosaic(std::string filePath);
     void generateRGBComponents();
     void interpolate();
     void colorize();
-    void squaredDifference();
-    void modifiedInterpolation();
+    // void squaredDifference();
+    // void modifiedInterpolation();
     void display();
 };
 
